@@ -29,9 +29,10 @@ menu() {
     echo " 6. 查看端口 / 用户名 / 密码"
     echo " 7. 随机重置端口 + 账号密码"
     echo " 8. 切换监听模式（IPv4 / IPv6）"
+    echo " 9. 激活 / 绑定 IPv6"
     echo " 0. 退出"
     echo "======================================="
-    read -p "请输入选项 [0-8]: " choice
+    read -p "请输入选项 [0-9]: " choice
 
     case $choice in
         1) install_socks5 ;;
@@ -42,6 +43,7 @@ menu() {
         6) show_socks5 ;;
         7) random_reset ;;
         8) switch_ip ;;
+        9) enable_ipv6 ;;
         0) exit 0 ;;
         *) echo "输入错误"; sleep 1; menu ;;
     esac
@@ -136,16 +138,53 @@ switch_ip() {
     [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
 
     if ip -6 addr | grep -q inet6; then
-        read -p "切换到 IPv6 双栈监听？(y/n): " yn
+        read -p "切换为 IPv6 双栈监听？(y/n): " yn
         if [[ $yn == "y" ]]; then
             sed -i 's/"listen": "0.0.0.0"/"listen": "::"/' $CONFIG_FILE
             systemctl restart sing-box.service
-            echo "✔ 已切换为 IPv6 + IPv4 双栈"
+            echo "✔ 已切换为 IPv6 双栈"
         fi
     else
-        echo "❌ 当前服务器没有 IPv6"
+        echo "❌ 当前系统未检测到 IPv6"
     fi
     sleep 2
+    menu
+}
+
+enable_ipv6() {
+    echo "====== IPv6 激活检测 ======"
+
+    if ip -6 addr | grep -q inet6; then
+        echo "✔ 已存在 IPv6 地址"
+        ip -6 addr | grep inet6
+        read -p "回车继续..." _
+        menu
+        return
+    fi
+
+    echo "未检测到 IPv6，尝试激活..."
+
+    # 开启内核 IPv6
+    sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null
+    sysctl -w net.ipv6.conf.default.disable_ipv6=0 >/dev/null
+    sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null
+
+    # Ubuntu / Debian 尝试 netplan
+    if command -v netplan >/dev/null 2>&1; then
+        netplan apply 2>/dev/null
+    fi
+
+    sleep 2
+
+    if ip -6 addr | grep -q inet6; then
+        echo "✔ IPv6 激活成功"
+        ip -6 addr | grep inet6
+    else
+        echo "❌ IPv6 激活失败"
+        echo "⚠️ 可能原因：VPS 未分配 IPv6"
+    fi
+
+    read -p "回车继续..." _
     menu
 }
 
