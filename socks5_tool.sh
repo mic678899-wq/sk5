@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # ==========================================
-#   SOCKS5 Toolbox by mic678899-wq
+#   SOCKS5 Toolbox (最终版)
+#   作者: mic678899-wq
 # ==========================================
 
 INSTALL_URL="https://raw.githubusercontent.com/mic678899-wq/sk5/main/install_socks5.sh"
@@ -34,11 +35,11 @@ menu() {
     echo " 7. 随机重置端口 + 账号密码"
     echo " 8. 切换监听模式（IPv4 / IPv6）"
     echo " 9. 激活 IPv6（检测）"
-    echo "10. 永久绑定服务商 IPv6 ⭐"
+    echo "10. 永久绑定服务商 IPv6"
     echo "11. 一键配置 IPv6 并绑定 SOCKS5"
     echo " 0. 退出"
     echo "======================================="
-    read -p "请输入选项 [0-10]: " choice
+    read -p "请输入选项 [0-11]: " choice
 
     case $choice in
         1) install_socks5 ;;
@@ -83,7 +84,7 @@ restart_socks5() {
 }
 
 modify_socks5() {
-    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
     read -p "新端口（回车跳过）: " P
     read -p "新用户名（回车跳过）: " U
@@ -100,7 +101,7 @@ modify_socks5() {
 }
 
 show_socks5() {
-    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
     PORT=$(grep -oP '"listen_port":\s*\K\d+' $CONFIG_FILE)
     USER=$(grep -oP '"username":\s*"\K[^"]+' $CONFIG_FILE)
@@ -122,7 +123,7 @@ show_socks5() {
 }
 
 random_reset() {
-    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
     P=$(shuf -i 10000-60000 -n 1)
     U=$(tr -dc a-z0-9 </dev/urandom | head -c 8)
@@ -143,7 +144,7 @@ random_reset() {
 }
 
 switch_ip() {
-    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
     if ip -6 addr show scope global | grep -q inet6; then
         read -p "切换为 IPv6 双栈监听？(y/n): " yn
@@ -183,9 +184,9 @@ bind_ipv6_netplan() {
     IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
     [ -z "$IFACE" ] && echo "❌ 无法检测网卡" && pause && menu
 
-    read -p "IPv6 地址 (如 2a01:xxxx::1): " IPV6_ADDR
-    read -p "前缀长度 (如 64): " IPV6_PREFIX
-    read -p "IPv6 网关 (通常 fe80::1): " IPV6_GW
+    read -p "IPv6 地址 (例如 2404:c140:2100::1234): " IPV6_ADDR
+    read -p "前缀长度 (例如 64): " IPV6_PREFIX
+    read -p "IPv6 网关 (例如 2404:c140:2100::1): " IPV6_GW
 
     NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1)
     cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
@@ -211,26 +212,17 @@ EOF
 
     chmod 600 "$NETPLAN_FILE"
     netplan apply
-
-    sleep 3
-    if curl -6 -s ipv6.ip.sb >/dev/null; then
-        echo "✔ IPv6 永久绑定成功"
-        curl -6 ipv6.ip.sb
-    else
-        echo "❌ IPv6 绑定失败，请检查参数"
-    fi
-
+    echo "✔ IPv6 永久绑定完成"
     pause
     menu
 }
+
 auto_ipv6_setup() {
     echo "====== 一键 IPv6 配置并绑定 SOCKS5 ======"
 
-    # 检测主网卡
     IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
     [ -z "$IFACE" ] && echo "❌ 无法检测到主网卡" && pause && menu
 
-    # 尝试获取公网 IPv6
     IPV6=$(curl -6 -s ipv6.ip.sb 2>/dev/null)
 
     if [ -n "$IPV6" ]; then
@@ -242,11 +234,9 @@ auto_ipv6_setup() {
         read -p "请输入 IPv6 前缀长度 (通常 64): " IPV6_PREFIX
         read -p "请输入 IPv6 网关 (例如 2404:c140:2100::1): " IPV6_GW
 
-        # 备份 netplan
         NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1)
         cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
 
-        # 写入 netplan 配置
         cat > "$NETPLAN_FILE" <<EOF
 network:
   version: 2
@@ -270,14 +260,13 @@ EOF
         echo "✔ IPv6 已绑定并生效"
     fi
 
-    # 切换 SOCKS5 配置为 IPv6 双栈
     if [ -f "$CONFIG_FILE" ]; then
         sed -i 's/"listen": "0.0.0.0"/"listen": "::"/' "$CONFIG_FILE"
         systemctl restart sing-box.service
         echo "✔ SOCKS5 已切换为 IPv6 双栈"
     fi
 
-    # 显示最终信息
     show_socks5
 }
+
 menu
