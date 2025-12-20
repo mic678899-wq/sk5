@@ -18,9 +18,11 @@ menu() {
     echo " 3. 查看服务状态"
     echo " 4. 重启 SOCKS5"
     echo " 5. 修改端口或用户名/密码"
-    echo " 6. 退出"
+    echo " 6. 查看端口 / 用户名 / 密码"
+    echo " 7. 随机重置端口 + 账号密码"
+    echo " 0. 退出"
     echo "======================================="
-    read -p "请输入选项 [1-6]: " choice
+    read -p "请输入选项 [0-7]: " choice
 
     case $choice in
         1) install_socks5 ;;
@@ -28,75 +30,102 @@ menu() {
         3) status_socks5 ;;
         4) restart_socks5 ;;
         5) modify_socks5 ;;
-        6) exit 0 ;;
+        6) show_socks5 ;;
+        7) random_reset ;;
+        0) exit 0 ;;
         *) echo "输入错误，请重新选择"; sleep 1; menu ;;
     esac
 }
 
 install_socks5() {
-    echo "正在下载安装脚本..."
     bash <(curl -fsSL $INSTALL_URL)
-    echo
     read -p "按回车键继续..." enter
     menu
 }
 
 uninstall_socks5() {
-    echo "正在卸载 SOCKS5..."
     bash <(curl -fsSL $UNINSTALL_URL)
-    echo
     read -p "按回车键继续..." enter
     menu
 }
 
 status_socks5() {
-    echo "正在查看状态..."
     systemctl status sing-box.service
-    echo
     read -p "按回车键继续..." enter
     menu
 }
 
 restart_socks5() {
-    echo "重启 SOCKS5 服务..."
     systemctl restart sing-box.service
-    echo "已重启"
+    echo "✔ 已重启 sing-box"
     sleep 1
     menu
 }
 
 modify_socks5() {
-    if [ ! -f "$CONFIG_FILE" ]; then
-        echo "未找到 $CONFIG_FILE，请先安装 SOCKS5"
-        sleep 2
-        menu
-        return
-    fi
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
 
-    echo "========== 修改 SOCKS5 配置 =========="
-    read -p "输入新端口（留空保持不变）: " NEW_PORT
-    read -p "输入新用户名（留空保持不变）: " NEW_USER
-    read -p "输入新密码（留空保持不变）: " NEW_PASS
+    echo "====== 手动修改配置 ======"
+    read -p "新端口（回车跳过）: " NEW_PORT
+    read -p "新用户名（回车跳过）: " NEW_USER
+    read -p "新密码（回车跳过）: " NEW_PASS
 
-    # 修改端口
-    if [ ! -z "$NEW_PORT" ]; then
-        sed -i "s/\"listen_port\": [0-9]\+/\\"listen_port\\": $NEW_PORT/" $CONFIG_FILE
-    fi
+    [ -n "$NEW_PORT" ] && sed -i "s/\"listen_port\": [0-9]\+/\\"listen_port\\": $NEW_PORT/" $CONFIG_FILE
+    [ -n "$NEW_USER" ] && sed -i "s/\"username\": \".*\"/\"username\": \"$NEW_USER\"/" $CONFIG_FILE
+    [ -n "$NEW_PASS" ] && sed -i "s/\"password\": \".*\"/\"password\": \"$NEW_PASS\"/" $CONFIG_FILE
 
-    # 修改用户名
-    if [ ! -z "$NEW_USER" ]; then
-        sed -i "s/\"username\": \".*\"/\"username\": \"$NEW_USER\"/" $CONFIG_FILE
-    fi
-
-    # 修改密码
-    if [ ! -z "$NEW_PASS" ]; then
-        sed -i "s/\"password\": \".*\"/\"password\": \"$NEW_PASS\"/" $CONFIG_FILE
-    fi
-
-    # 重启服务
     systemctl restart sing-box.service
-    echo "修改完成，sing-box 已重启！"
+    echo "✔ 修改完成并已重启"
     sleep 2
+    menu
+}
+
+show_socks5() {
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+
+    PORT=$(grep -oP '"listen_port":\s*\K\d+' $CONFIG_FILE)
+    USER=$(grep -oP '"username":\s*"\K[^"]+' $CONFIG_FILE)
+    PASS=$(grep -oP '"password":\s*"\K[^"]+' $CONFIG_FILE)
+    IP=$(curl -s ipv4.ip.sb || curl -s ifconfig.me)
+
+    echo "======================================="
+    echo " SOCKS5 当前信息"
+    echo "======================================="
+    echo " IP       : $IP"
+    echo " 端口     : $PORT"
+    echo " 用户名   : $USER"
+    echo " 密码     : $PASS"
+    echo " 地址     : $IP:$PORT"
+    echo "======================================="
+    read -p "按回车键继续..." enter
+    menu
+}
+
+random_reset() {
+    [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
+
+    NEW_PORT=$(shuf -i 10000-60000 -n 1)
+    NEW_USER=$(tr -dc 'a-z0-9' </dev/urandom | head -c 8)
+    NEW_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
+
+    sed -i "s/\"listen_port\": [0-9]\+/\\"listen_port\\": $NEW_PORT/" $CONFIG_FILE
+    sed -i "s/\"username\": \".*\"/\"username\": \"$NEW_USER\"/" $CONFIG_FILE
+    sed -i "s/\"password\": \".*\"/\"password\": \"$NEW_PASS\"/" $CONFIG_FILE
+
+    systemctl restart sing-box.service
+
+    IP=$(curl -s ipv4.ip.sb || curl -s ifconfig.me)
+
+    echo "======================================="
+    echo " 随机重置完成"
+    echo "======================================="
+    echo " IP       : $IP"
+    echo " 端口     : $NEW_PORT"
+    echo " 用户名   : $NEW_USER"
+    echo " 密码     : $NEW_PASS"
+    echo " 地址     : $IP:$NEW_PORT"
+    echo "======================================="
+    read -p "按回车键继续..." enter
     menu
 }
 
