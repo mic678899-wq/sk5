@@ -16,6 +16,10 @@ get_ipv6() {
     curl -6 -s ipv6.ip.sb 2>/dev/null
 }
 
+pause() {
+    read -p "回车继续..." _
+}
+
 menu() {
     clear
     echo "======================================="
@@ -29,10 +33,11 @@ menu() {
     echo " 6. 查看端口 / 用户名 / 密码"
     echo " 7. 随机重置端口 + 账号密码"
     echo " 8. 切换监听模式（IPv4 / IPv6）"
-    echo " 9. 激活 / 绑定 IPv6"
+    echo " 9. 激活 IPv6（检测）"
+    echo "10. 永久绑定服务商 IPv6 ⭐"
     echo " 0. 退出"
     echo "======================================="
-    read -p "请输入选项 [0-9]: " choice
+    read -p "请输入选项 [0-10]: " choice
 
     case $choice in
         1) install_socks5 ;;
@@ -44,6 +49,7 @@ menu() {
         7) random_reset ;;
         8) switch_ip ;;
         9) enable_ipv6 ;;
+        10) bind_ipv6_netplan ;;
         0) exit 0 ;;
         *) echo "输入错误"; sleep 1; menu ;;
     esac
@@ -51,19 +57,19 @@ menu() {
 
 install_socks5() {
     bash <(curl -fsSL $INSTALL_URL)
-    read -p "回车继续..." _
+    pause
     menu
 }
 
 uninstall_socks5() {
     bash <(curl -fsSL $UNINSTALL_URL)
-    read -p "回车继续..." _
+    pause
     menu
 }
 
 status_socks5() {
     systemctl status sing-box.service
-    read -p "回车继续..." _
+    pause
     menu
 }
 
@@ -109,7 +115,7 @@ show_socks5() {
     echo " 用户名 : $USER"
     echo " 密码   : $PASS"
     echo "======================================="
-    read -p "回车继续..." _
+    pause
     menu
 }
 
@@ -130,61 +136,89 @@ random_reset() {
     echo " 端口: $P"
     echo " 用户: $U"
     echo " 密码: $PW"
-    sleep 2
+    pause
     menu
 }
 
 switch_ip() {
     [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && sleep 2 && menu
 
-    if ip -6 addr | grep -q inet6; then
+    if ip -6 addr show scope global | grep -q inet6; then
         read -p "切换为 IPv6 双栈监听？(y/n): " yn
         if [[ $yn == "y" ]]; then
             sed -i 's/"listen": "0.0.0.0"/"listen": "::"/' $CONFIG_FILE
             systemctl restart sing-box.service
-            echo "✔ 已切换为 IPv6 双栈"
+            echo "✔ 已切换为 IPv6 + IPv4 双栈"
         fi
     else
-        echo "❌ 当前系统未检测到 IPv6"
+        echo "❌ 未检测到公网 IPv6"
     fi
-    sleep 2
+    pause
     menu
 }
 
 enable_ipv6() {
-    echo "====== IPv6 激活检测 ======"
+    IPV6=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1)
 
-    if ip -6 addr | grep -q inet6; then
-        echo "✔ 已存在 IPv6 地址"
-        ip -6 addr | grep inet6
-        read -p "回车继续..." _
-        menu
-        return
-    fi
-
-    echo "未检测到 IPv6，尝试激活..."
-
-    # 开启内核 IPv6
-    sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null
-    sysctl -w net.ipv6.conf.default.disable_ipv6=0 >/dev/null
-    sysctl -w net.ipv6.conf.lo.disable_ipv6=0 >/dev/null
-
-    # Ubuntu / Debian 尝试 netplan
-    if command -v netplan >/dev/null 2>&1; then
-        netplan apply 2>/dev/null
-    fi
-
-    sleep 2
-
-    if ip -6 addr | grep -q inet6; then
-        echo "✔ IPv6 激活成功"
-        ip -6 addr | grep inet6
+    if [ -n "$IPV6" ]; then
+        echo "✔ 已检测到公网 IPv6: $IPV6"
     else
-        echo "❌ IPv6 激活失败"
-        echo "⚠️ 可能原因：VPS 未分配 IPv6"
+        echo "❌ 未检测到公网 IPv6（可能需要永久绑定）"
+    fi
+    pause
+    menu
+}
+
+bind_ipv6_netplan() {
+    echo "====== 永久绑定服务商 IPv6 ======"
+
+    if ! command -v netplan >/dev/null 2>&1; then
+        echo "❌ 当前系统不支持 netplan"
+        pause
+        menu
     fi
 
-    read -p "回车继续..." _
+    IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
+    [ -z "$IFACE" ] && echo "❌ 无法检测网卡" && pause && menu
+
+    read -p "IPv6 地址 (如 2a01:xxxx::1): " IPV6_ADDR
+    read -p "前缀长度 (如 64): " IPV6_PREFIX
+    read -p "IPv6 网关 (通常 fe80::1): " IPV6_GW
+
+    NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1)
+    cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
+
+cat > "$NETPLAN_FILE" <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $IFACE:
+      dhcp4: true
+      dhcp6: false
+      addresses:
+        - ${IPV6_ADDR}/${IPV6_PREFIX}
+      routes:
+        - to: default
+          via: ${IPV6_GW}
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 2001:4860:4860::8888
+EOF
+
+    chmod 600 "$NETPLAN_FILE"
+    netplan apply
+
+    sleep 3
+    if curl -6 -s ipv6.ip.sb >/dev/null; then
+        echo "✔ IPv6 永久绑定成功"
+        curl -6 ipv6.ip.sb
+    else
+        echo "❌ IPv6 绑定失败，请检查参数"
+    fi
+
+    pause
     menu
 }
 
