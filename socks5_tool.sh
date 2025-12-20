@@ -35,6 +35,7 @@ menu() {
     echo " 8. 切换监听模式（IPv4 / IPv6）"
     echo " 9. 激活 IPv6（检测）"
     echo "10. 永久绑定服务商 IPv6 ⭐"
+    echo "11. 一键配置 IPv6 并绑定 SOCKS5"
     echo " 0. 退出"
     echo "======================================="
     read -p "请输入选项 [0-10]: " choice
@@ -50,6 +51,7 @@ menu() {
         8) switch_ip ;;
         9) enable_ipv6 ;;
         10) bind_ipv6_netplan ;;
+        11) auto_ipv6_setup ;;
         0) exit 0 ;;
         *) echo "输入错误"; sleep 1; menu ;;
     esac
@@ -221,5 +223,61 @@ EOF
     pause
     menu
 }
+auto_ipv6_setup() {
+    echo "====== 一键 IPv6 配置并绑定 SOCKS5 ======"
 
+    # 检测主网卡
+    IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
+    [ -z "$IFACE" ] && echo "❌ 无法检测到主网卡" && pause && menu
+
+    # 尝试获取公网 IPv6
+    IPV6=$(curl -6 -s ipv6.ip.sb 2>/dev/null)
+
+    if [ -n "$IPV6" ]; then
+        echo "✔ 已检测到公网 IPv6: $IPV6"
+    else
+        echo "⚠ 未检测到公网 IPv6，需要手动输入服务商提供信息"
+
+        read -p "请输入 IPv6 地址 (例如 2404:c140:2100::1234): " IPV6
+        read -p "请输入 IPv6 前缀长度 (通常 64): " IPV6_PREFIX
+        read -p "请输入 IPv6 网关 (例如 2404:c140:2100::1): " IPV6_GW
+
+        # 备份 netplan
+        NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1)
+        cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
+
+        # 写入 netplan 配置
+        cat > "$NETPLAN_FILE" <<EOF
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    $IFACE:
+      dhcp4: true
+      dhcp6: false
+      addresses:
+        - ${IPV6}/${IPV6_PREFIX}
+      routes:
+        - to: default
+          via: ${IPV6_GW}
+      nameservers:
+        addresses:
+          - 8.8.8.8
+          - 2001:4860:4860::8888
+EOF
+        chmod 600 "$NETPLAN_FILE"
+        netplan apply
+        echo "✔ IPv6 已绑定并生效"
+    fi
+
+    # 切换 SOCKS5 配置为 IPv6 双栈
+    if [ -f "$CONFIG_FILE" ]; then
+        sed -i 's/"listen": "0.0.0.0"/"listen": "::"/' "$CONFIG_FILE"
+        systemctl restart sing-box.service
+        echo "✔ SOCKS5 已切换为 IPv6 双栈"
+    fi
+
+    # 显示最终信息
+    show_socks5
+}
 menu
