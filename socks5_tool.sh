@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # ==========================================
-#   SOCKS5 Toolbox (最终版)
-#   作者: mic678899-wq
+#   SOCKS5 Toolbox (最终版，含 IPv6 一键配置修复)
 # ==========================================
 
 INSTALL_URL="https://raw.githubusercontent.com/mic678899-wq/sk5/main/install_socks5.sh"
@@ -221,23 +220,35 @@ auto_ipv6_setup() {
     echo "====== 一键 IPv6 配置并绑定 SOCKS5 ======"
 
     IFACE=$(ip route | awk '/default/ {print $5}' | head -n1)
-    [ -z "$IFACE" ] && echo "❌ 无法检测到主网卡" && pause && menu
+    [ -z "$IFACE" ] && { echo "❌ 无法检测到主网卡"; pause; menu; }
+    echo "✔ 检测到主网卡: $IFACE"
 
     IPV6=$(curl -6 -s ipv6.ip.sb 2>/dev/null)
-
     if [ -n "$IPV6" ]; then
         echo "✔ 已检测到公网 IPv6: $IPV6"
-    else
-        echo "⚠ 未检测到公网 IPv6，需要手动输入服务商提供信息"
+        read -p "是否使用检测到的 IPv6？(y/n): " use_ipv6
+        if [[ $use_ipv6 != "y" ]]; then
+            IPV6=""
+        fi
+    fi
 
+    if [ -z "$IPV6" ]; then
+        echo "⚠ 未检测到公网 IPv6，或者选择手动输入"
         read -p "请输入 IPv6 地址 (例如 2404:c140:2100::1234): " IPV6
         read -p "请输入 IPv6 前缀长度 (通常 64): " IPV6_PREFIX
         read -p "请输入 IPv6 网关 (例如 2404:c140:2100::1): " IPV6_GW
+    fi
 
-        NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1)
-        cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
+    NETPLAN_FILE=$(ls /etc/netplan/*.yaml | head -n1 2>/dev/null)
+    if [ -z "$NETPLAN_FILE" ]; then
+        echo "❌ 未找到 /etc/netplan/*.yaml 文件"
+        pause
+        menu
+    fi
 
-        cat > "$NETPLAN_FILE" <<EOF
+    cp "$NETPLAN_FILE" "${NETPLAN_FILE}.bak.$(date +%s)"
+
+cat > "$NETPLAN_FILE" <<EOF
 network:
   version: 2
   renderer: networkd
@@ -255,10 +266,11 @@ network:
           - 8.8.8.8
           - 2001:4860:4860::8888
 EOF
-        chmod 600 "$NETPLAN_FILE"
-        netplan apply
-        echo "✔ IPv6 已绑定并生效"
-    fi
+
+    chmod 600 "$NETPLAN_FILE"
+    echo "✔ netplan 配置已写入，正在应用..."
+    netplan apply
+    sleep 2
 
     if [ -f "$CONFIG_FILE" ]; then
         sed -i 's/"listen": "0.0.0.0"/"listen": "::"/' "$CONFIG_FILE"
@@ -266,6 +278,7 @@ EOF
         echo "✔ SOCKS5 已切换为 IPv6 双栈"
     fi
 
+    echo "✔ 完成 IPv6 配置"
     show_socks5
 }
 
