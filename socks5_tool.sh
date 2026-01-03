@@ -85,26 +85,37 @@ restart_socks5() {
 modify_socks5() {
     [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
-    read -p "新端口（回车跳过）: " P
-    read -p "新用户名（回车跳过）: " U
-    read -p "新密码（回车跳过）: " PW
+    read -p "新端口（回车跳过）: " NEW_PORT
+    read -p "新用户名（回车跳过）: " NEW_USER
+    read -p "新密码（回车跳过）: " NEW_PASS
 
-    [ -n "$P" ] && sed -i "s/\"listen_port\": [0-9]\+/\\"listen_port\\": $P/" $CONFIG_FILE
-    [ -n "$U" ] && sed -i "s/\"username\": \".*\"/\"username\": \"$U\"/" $CONFIG_FILE
-    [ -n "$PW" ] && sed -i "s/\"password\": \".*\"/\"password\": \"$PW\"/" $CONFIG_FILE
+    # 修改端口（只匹配 listen_port）
+    if [ -n "$NEW_PORT" ]; then
+        sed -i -E 's/("listen_port"[[:space:]]*:[[:space:]]*)[0-9]+/\1'"$NEW_PORT"'/' "$CONFIG_FILE"
+    fi
+
+    # 修改用户名（只匹配 username 字段）
+    if [ -n "$NEW_USER" ]; then
+        sed -i -E 's/("username"[[:space:]]*:[[:space:]]*")[^"]+/\1'"$NEW_USER"'/' "$CONFIG_FILE"
+    fi
+
+    # 修改密码（只匹配 password 字段）
+    if [ -n "$NEW_PASS" ]; then
+        sed -i -E 's/("password"[[:space:]]*:[[:space:]]*")[^"]+/\1'"$NEW_PASS"'/' "$CONFIG_FILE"
+    fi
 
     systemctl restart sing-box.service
-    echo "✔ 修改完成"
-    sleep 1
+    echo "✔ 修改完成并已重启 sing-box"
+    pause
     menu
 }
 
 show_socks5() {
     [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
-    PORT=$(sed -n 's/.*"listen_port":[[:space:]]*\([0-9]\+\).*/\1/p' "$CONFIG_FILE" | head -n1)
-    USER=$(sed -n 's/.*"username":[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_FILE" | head -n1)
-    PASS=$(sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_FILE" | head -n1)
+    PORT=$(sed -nE 's/.*"listen_port"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' "$CONFIG_FILE" | head -n1)
+    USER=$(sed -nE 's/.*"username"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$CONFIG_FILE" | head -n1)
+    PASS=$(sed -nE 's/.*"password"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$CONFIG_FILE" | head -n1)
 
     IPV4=$(get_ipv4)
     IPV6=$(get_ipv6)
