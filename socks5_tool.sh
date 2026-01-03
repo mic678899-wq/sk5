@@ -102,9 +102,9 @@ modify_socks5() {
 show_socks5() {
     [ ! -f "$CONFIG_FILE" ] && echo "未安装 SOCKS5" && pause && menu
 
-    PORT=$(grep -oP '"listen_port":\s*\K\d+' $CONFIG_FILE)
-    USER=$(grep -oP '"username":\s*"\K[^"]+' $CONFIG_FILE)
-    PASS=$(grep -oP '"password":\s*"\K[^"]+' $CONFIG_FILE)
+    PORT=$(sed -n 's/.*"listen_port":[[:space:]]*\([0-9]\+\).*/\1/p' "$CONFIG_FILE" | head -n1)
+    USER=$(sed -n 's/.*"username":[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_FILE" | head -n1)
+    PASS=$(sed -n 's/.*"password":[[:space:]]*"\([^"]*\)".*/\1/p' "$CONFIG_FILE" | head -n1)
 
     IPV4=$(get_ipv4)
     IPV6=$(get_ipv6)
