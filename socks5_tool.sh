@@ -117,6 +117,11 @@ show_socks5() {
     USER=$(sed -nE 's/.*"username"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$CONFIG_FILE" | head -n1)
     PASS=$(sed -nE 's/.*"password"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$CONFIG_FILE" | head -n1)
 
+    if [ -z "$PORT" ]; then
+        echo "⚠ 端口解析失败（config.json 可能被破坏）"
+        echo "配置文件路径: $CONFIG_FILE"
+    fi
+
     IPV4=$(get_ipv4)
     IPV6=$(get_ipv6)
 
